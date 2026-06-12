@@ -16,7 +16,6 @@ export default function Home() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [debugMsg, setDebugMsg] = useState("");
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -100,15 +99,12 @@ export default function Home() {
 
       // 3. 只把對話回覆變成語音播放（修正的部分不唸）
       console.time("speak");
-      setDebugMsg("正在請求語音...");
       const speakRes = await fetch("/api/speak", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: reply }),
       });
-      setDebugMsg("speak 狀態: " + speakRes.status);
       const audioData = await speakRes.blob();
-      setDebugMsg("拿到音檔，大小: " + audioData.size);
       console.timeEnd("speak");
 
       const audioUrl = URL.createObjectURL(audioData);
@@ -116,12 +112,9 @@ export default function Home() {
         audioRef.current.src = audioUrl;
         try {
           await audioRef.current.play();
-          setDebugMsg("播放成功 ✅");
         } catch (err) {
-          setDebugMsg("播放失敗：" + String(err));
+          console.error(err);
         }
-      } else {
-        setDebugMsg("audioRef 不存在");
       }
     } finally {
       setIsProcessing(false);
@@ -131,9 +124,6 @@ export default function Home() {
   return (
     <main style={{ maxWidth: 600, margin: "0 auto", padding: 24, fontFamily: "sans-serif" }}>
       <h1 style={{ fontSize: 24, marginBottom: 16 }}>한국어 회화 연습 🇰🇷</h1>
-      {debugMsg && (
-        <p style={{ color: "red", fontSize: 12 }}>{debugMsg}</p>
-      )}
 
       <div style={{ marginBottom: 24, minHeight: 300 }}>
         {messages.length === 0 && (
