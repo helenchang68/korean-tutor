@@ -15,8 +15,15 @@ export default function Home() {
   const [isProcessing, setIsProcessing] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   async function startRecording() {
+    // 在使用者觸碰當下解鎖音訊（iOS Safari 需要）
+    if (!audioRef.current) {
+      audioRef.current = new Audio();
+    }
+    audioRef.current.play().catch(() => {});
+    
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     const mediaRecorder = new MediaRecorder(stream);
     mediaRecorderRef.current = mediaRecorder;
@@ -95,9 +102,12 @@ export default function Home() {
       });
       const audioData = await speakRes.blob();
       console.timeEnd("speak");
-      
+
       const audioUrl = URL.createObjectURL(audioData);
-      new Audio(audioUrl).play();
+      if (audioRef.current) {
+        audioRef.current.src = audioUrl;
+        audioRef.current.play();
+      }
     } finally {
       setIsProcessing(false);
     }
