@@ -100,12 +100,15 @@ export default function Home() {
 
       // 3. 只把對話回覆變成語音播放（修正的部分不唸）
       console.time("speak");
+      setDebugMsg("正在請求語音...");
       const speakRes = await fetch("/api/speak", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: reply }),
       });
+      setDebugMsg("speak 狀態: " + speakRes.status);
       const audioData = await speakRes.blob();
+      setDebugMsg("拿到音檔，大小: " + audioData.size);
       console.timeEnd("speak");
 
       const audioUrl = URL.createObjectURL(audioData);
