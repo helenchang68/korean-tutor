@@ -2,6 +2,9 @@
 
 import { useState, useRef } from "react";
 
+const SILENT_WAV =
+  "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=";
+
 type Message = {
   role: "user" | "assistant";
   content: string;
@@ -22,6 +25,7 @@ export default function Home() {
     if (!audioRef.current) {
       audioRef.current = new Audio();
     }
+    audioRef.current.src = SILENT_WAV;
     audioRef.current.play().catch(() => {});
     
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
