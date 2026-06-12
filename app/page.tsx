@@ -1,65 +1,176 @@
-import Image from "next/image";
+"use client";
+
+import { useState, useRef } from "react";
+
+type Message = {
+  role: "user" | "assistant";
+  content: string;
+  correction?: string | null;
+  natural?: string | null;
+};
 
 export default function Home() {
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [isRecording, setIsRecording] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+
+  async function startRecording() {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const mediaRecorder = new MediaRecorder(stream);
+    mediaRecorderRef.current = mediaRecorder;
+    chunksRef.current = [];
+
+    mediaRecorder.ondataavailable = (e) => {
+      chunksRef.current.push(e.data);
+    };
+
+    mediaRecorder.onstop = async () => {
+      stream.getTracks().forEach((track) => track.stop());
+      const audioBlob = new Blob(chunksRef.current, { type: "audio/webm" });
+      await handleAudio(audioBlob);
+    };
+
+    mediaRecorder.start();
+    setIsRecording(true);
+  }
+
+  function stopRecording() {
+    mediaRecorderRef.current?.stop();
+    setIsRecording(false);
+  }
+
+  async function handleAudio(audioBlob: Blob) {
+    setIsProcessing(true);
+    try {
+      // 1. 語音轉文字
+      console.time("transcribe");
+      const formData = new FormData();
+      formData.append("audio", audioBlob, "recording.webm");
+      const transcribeRes = await fetch("/api/transcribe", {
+        method: "POST",
+        body: formData,
+      });
+      const { text } = await transcribeRes.json();
+      console.timeEnd("transcribe");
+
+      const newMessages: Message[] = [
+        ...messages,
+        { role: "user", content: text },
+      ];
+      setMessages(newMessages);
+
+      // 2. 取得 AI 回覆（只把 role 和 content 送給 API）
+      console.time("chat");
+      const chatRes = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: newMessages.map((m) => ({
+            role: m.role,
+            content: m.content,
+          })),
+        }),
+      });
+      const { correction, natural, reply } = await chatRes.json();
+      console.timeEnd("chat");
+
+      // 把修正資訊掛在「你說的那句話」上面
+      const updatedMessages: Message[] = [...newMessages];
+      updatedMessages[updatedMessages.length - 1] = {
+        ...updatedMessages[updatedMessages.length - 1],
+        correction,
+        natural,
+      };
+      updatedMessages.push({ role: "assistant", content: reply });
+      setMessages(updatedMessages);
+
+      // 3. 只把對話回覆變成語音播放（修正的部分不唸）
+      console.time("speak");
+      const speakRes = await fetch("/api/speak", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: reply }),
+      });
+      const audioData = await speakRes.blob();
+      console.timeEnd("speak");
+      
+      const audioUrl = URL.createObjectURL(audioData);
+      new Audio(audioUrl).play();
+    } finally {
+      setIsProcessing(false);
+    }
+  }
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+    <main style={{ maxWidth: 600, margin: "0 auto", padding: 24, fontFamily: "sans-serif" }}>
+      <h1 style={{ fontSize: 24, marginBottom: 16 }}>한국어 회화 연습 🇰🇷</h1>
+
+      <div style={{ marginBottom: 24, minHeight: 300 }}>
+        {messages.length === 0 && (
+          <p style={{ color: "#888" }}>按下按鈕開始說韓語吧！</p>
+        )}
+        {messages.map((m, i) => (
+          <div key={i} style={{ marginBottom: 8 }}>
+            <div
+              style={{
+                padding: 12,
+                borderRadius: 12,
+                background: m.role === "user" ? "#e3f2fd" : "#f5f5f5",
+                whiteSpace: "pre-wrap",
+              }}
             >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+              <strong>{m.role === "user" ? "나" : "선생님"}</strong>
+              <div>{m.content}</div>
+            </div>
+
+            {(m.correction || m.natural) && (
+              <div
+                style={{
+                  padding: 12,
+                  marginTop: 4,
+                  borderRadius: 12,
+                  background: "#fff8e1",
+                  border: "1px solid #ffe082",
+                  fontSize: 14,
+                }}
+              >
+                {m.correction && (
+                  <div style={{ marginBottom: m.natural ? 8 : 0 }}>
+                    <strong>📝 수정</strong>
+                    <div>{m.correction}</div>
+                  </div>
+                )}
+                {m.natural && (
+                  <div>
+                    <strong>💬 이렇게 말하면 더 자연스러워요</strong>
+                    <div>{m.natural}</div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        ))}
+        {isProcessing && <p style={{ color: "#888" }}>처리 중...</p>}
+      </div>
+
+      <button
+        onClick={isRecording ? stopRecording : startRecording}
+        disabled={isProcessing}
+        style={{
+          width: "100%",
+          padding: 16,
+          fontSize: 18,
+          borderRadius: 12,
+          border: "none",
+          cursor: "pointer",
+          background: isRecording ? "#ef5350" : "#1976d2",
+          color: "white",
+        }}
+      >
+        {isRecording ? "⏹ 說完了，送出" : "🎤 按下開始說話"}
+      </button>
+    </main>
   );
 }
